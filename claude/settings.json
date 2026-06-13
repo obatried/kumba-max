@@ -1,0 +1,154 @@
+{
+  "permissions": {
+    "allow": [
+      "Read",
+      "Glob",
+      "Grep",
+      "Edit",
+      "Write",
+      "WebFetch",
+      "WebSearch",
+      "Skill(*)",
+      "Bash(git status)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(git show:*)",
+      "Bash(ls:*)",
+      "Bash(pwd)",
+      "Bash(cat:*)",
+      "Bash(head:*)",
+      "Bash(tail:*)"
+    ],
+    "deny": [
+      "Read(**/.ssh/**)",
+      "Read(**/credentials*)",
+      "Read(**/.credentials*)",
+      "Read(~/.gnupg/**)",
+      "Read(~/.aws/**)",
+      "Read(~/.azure/**)",
+      "Read(~/.config/gh/**)",
+      "Read(~/.git-credentials)",
+      "Read(~/.docker/config.json)",
+      "Read(~/.kube/**)",
+      "Read(~/.npmrc)",
+      "Read(~/.pypirc)",
+      "Read(~/.netrc)",
+      "Read(~/Library/Keychains/**)",
+      "Read(**/.env)",
+      "Read(**/.env.*)",
+      "Read(**/*.pem)",
+      "Read(**/*.key)",
+      "Read(**/*.p12)",
+      "Read(**/*.pfx)",
+      "Read(**/wallet.dat)",
+      "Read(**/seed_phrase*)",
+      "Read(**/mnemonic*)",
+      "Bash(rm -rf /)*",
+      "Bash(rm -rf ~)*",
+      "Bash(rm -rf .)*",
+      "Bash(mkfs.*)",
+      "Bash(dd if=*of=/dev*)",
+      "Bash(chmod -R 777 /)*",
+      "Bash(sudo *)",
+      "Bash(git push --force*)",
+      "Bash(git push *--force*)",
+      "Bash(git push -f*)",
+      "Bash(git reset --hard*)",
+      "Bash(nc *)",
+      "Bash(netcat *)",
+      "Bash(*</dev/tcp/*)",
+      "Bash(*>/dev/tcp/*)",
+      "Bash(*curl * | bash*)",
+      "Bash(*wget * | bash*)",
+      "Bash(*curl * | sh*)",
+      "Bash(*wget * | sh*)",
+      "Bash(*base64*|*curl*)",
+      "Bash(*base64 -d*|*sh*)",
+      "Bash(*base64 --decode*|*sh*)"
+    ],
+    "ask": []
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          { "type": "command", "command": "$HOME/.claude/hooks/total-recall-rebuild.sh", "timeout": 10 },
+          { "type": "command", "command": "$HOME/.claude/hooks/learn-preflight.sh", "timeout": 10 },
+          { "type": "command", "command": "$HOME/.claude/hooks/capped-files-check.sh", "timeout": 10 }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          { "type": "command", "command": "$HOME/.claude/hooks/total-recall-recall.sh", "timeout": 10 },
+          { "type": "command", "command": "$HOME/.claude/hooks/learn-trigger.sh", "timeout": 5 }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Write",
+        "hooks": [
+          { "type": "command", "command": "$HOME/.claude/hooks/memory-home-required.sh", "timeout": 5 },
+          { "type": "command", "command": "$HOME/.claude/hooks/total-recall-dedup.sh", "timeout": 5 }
+        ]
+      },
+      {
+        "matcher": "Write|Edit|MultiEdit|Bash",
+        "hooks": [
+          { "type": "command", "command": "$HOME/.claude/hooks/learn-guard.sh", "timeout": 5 },
+          { "type": "command", "command": "$HOME/.claude/hooks/mem-surface.sh", "timeout": 5 }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          { "type": "command", "command": "$HOME/.claude/hooks/commit-on-red-guard.sh", "timeout": 5 }
+        ]
+      },
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          { "type": "command", "command": "$HOME/.claude/hooks/persistence-guard.sh", "timeout": 5 }
+        ]
+      },
+      {
+        "matcher": "mcp__(gmail(-[2-4])?__(send_email|draft_email)|workspace-mcp__(send_gmail_message|draft_gmail_message))",
+        "hooks": [
+          { "type": "command", "command": "$HOME/.claude/hooks/gmail-approve.sh" }
+        ]
+      },
+      {
+        "matcher": "mcp__(workspace-mcp__(manage_event|create_event|update_event|delete_event|respond_to_event|manage_focus_time|manage_out_of_office)|gcal__(create-events?|update-event|delete-event|respond-to-event))",
+        "hooks": [
+          { "type": "command", "command": "$HOME/.claude/hooks/calendar-approve.sh" }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit|MultiEdit",
+        "hooks": [
+          { "type": "command", "command": "$HOME/.claude/hooks/total-recall-rebuild.sh", "timeout": 10 },
+          { "type": "command", "command": "$HOME/.claude/hooks/memory-autoindex.sh", "timeout": 10 }
+        ]
+      },
+      {
+        "matcher": "*",
+        "hooks": [
+          { "type": "command", "command": "$HOME/.claude/hooks/session-taint.sh", "timeout": 5 },
+          { "type": "command", "command": "$HOME/.claude/hooks/output-scanner.sh", "timeout": 10 }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          { "type": "command", "command": "$HOME/.claude/hooks/stop-slash-text-guard.sh", "timeout": 5 },
+          { "type": "command", "command": "$HOME/.claude/hooks/gave-up-early-guard.sh", "timeout": 5 }
+        ]
+      }
+    ]
+  }
+}
