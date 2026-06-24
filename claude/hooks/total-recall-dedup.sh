@@ -49,7 +49,8 @@ fi
 [ -z "${QUERY// /}" ] && exit 0
 
 # Real dup signal is COORDINATION RATIO: a genuine dup covers most of the new note's
-# terms (~0.9); a novel note shares only incidental words (~0.15-0.3).
+# terms (~0.9); a novel note shares only incidental words (~0.15-0.3). Skip index/router/
+# archive files — matching one of those is expected, not a duplicate.
 STRONG=$(get_conf DEDUP_STRONG); STRONG="${STRONG:--18}"
 RATIO=$(get_conf DEDUP_RATIO);   RATIO="${RATIO:-0.6}"
 HIT=$(TOTAL_RECALL_CONFIG="$CONFIG" python3 "$SEARCH" --tsv "$QUERY" 5 2>/dev/null | awk -F'\t' \
@@ -57,25 +58,69 @@ HIT=$(TOTAL_RECALL_CONFIG="$CONFIG" python3 "$SEARCH" --tsv "$QUERY" 5 2>/dev/nu
   NF>=4 {
     s=$1+0; m=$2+0; tot=$3+0; p=$4;
     if (idx != "" && p == idx) next;
+    if (p ~ /^\.?archive\//) next;
+    if (p ~ /^topics\//) next;
+    if (p ~ /^projects\/[^\/]+\.md$/) next;
+    if (p ~ /INDEX\.md$/) next;
     r=(tot>0)? m/tot : 0;
     if (m>=4 && s<=strong && r>=ratio) { print p; exit }
   }')
 [ -z "$HIT" ] && exit 0
 
+# --- Confidence split: a dedup check is workflow hygiene, not a safety invariant, so only
+# a NEAR-CERTAIN collision earns a block. EXACT (same canonical slug or normalized name)
+# -> DENY-once. Broad keyword overlap -> non-blocking ADVISORY, with magnet/oversize hits
+# dropped so the advisory stays high-signal. Real dup prevention lives in retrieval +
+# canonical-playbook structure, not this gate.
+EXACT=0
+NEW_SLUG=$(basename "$REL" .md | sed -E 's/^(feedback|reference|project|user|tool)_//')
+HIT_SLUG=$(basename "$HIT" .md | sed -E 's/^(feedback|reference|project|user|tool)_//')
+[ -n "$NEW_SLUG" ] && [ "$NEW_SLUG" = "$HIT_SLUG" ] && EXACT=1
+nrm() { tr '[:upper:]' '[:lower:]' | tr -cd '[:alnum:]'; }
+NEW_NAME=$(printf '%s' "$CONTENT" | awk 'BEGIN{c=0} /^---$/{c++; if(c==2)exit; next} c==1 && /^name:/{sub(/^name: */,""); gsub(/"/,""); print; exit}' | nrm)
+HIT_NAME=$(awk 'BEGIN{c=0} /^---$/{c++; if(c==2)exit; next} c==1 && /^name:/{sub(/^name: */,""); gsub(/"/,""); print; exit}' "$MEM_DIR/$HIT" 2>/dev/null | nrm)
+[ -n "$NEW_NAME" ] && [ "$NEW_NAME" = "$HIT_NAME" ] && EXACT=1
+
+# Fuzzy: drop magnet/oversize matches (broad index-like files, or a hit >4x the new note's
+# size) so the advisory is worth surfacing at all.
+if [ "$EXACT" -eq 0 ]; then
+  case "$HIT" in
+    project_*|*/state.md|*/state-history.md|*-history.md) exit 0 ;;
+  esac
+  NEW_SIZE=${#CONTENT}
+  HIT_SIZE=$(wc -c < "$MEM_DIR/$HIT" 2>/dev/null | tr -d ' ')
+  if [ -n "$HIT_SIZE" ] && [ "${NEW_SIZE:-0}" -gt 0 ] && [ "$HIT_SIZE" -gt $(( NEW_SIZE * 4 )) ]; then exit 0; fi
+fi
+
+# Surface ONCE per (session, new-file): record first, then act; a deliberate retry passes through.
 SESSION_ID=$(printf '%s' "$INPUT" | jq -r '.session_id // "unknown"')
 SAFE_SID=$(printf '%s' "$SESSION_ID" | tr -cs 'A-Za-z0-9._-' '_'); [ -z "$SAFE_SID" ] && SAFE_SID="unknown"
 SAFE_REL=$(printf '%s' "$REL" | tr -cs 'A-Za-z0-9._-' '_')   # full rel path, not just basename
 STATE_DIR="$HOME/.cache/total-recall"; mkdir -p "$STATE_DIR" 2>/dev/null || true
 THROTTLE="$STATE_DIR/dedup-${SAFE_SID}-${SAFE_REL}"
-[ -f "$THROTTLE" ] && exit 0   # already warned once this session — let the deliberate retry through
-date -u +%Y-%m-%dT%H:%M:%SZ > "$THROTTLE" 2>/dev/null || true
+[ -f "$THROTTLE" ] && exit 0   # already surfaced once this session — let the deliberate retry through
+# Record the once-throttle BEFORE acting. If we can't write it (e.g. unwritable cache), fail
+# OPEN — never deny, since we couldn't guarantee the deliberate retry would then pass.
+date -u +%Y-%m-%dT%H:%M:%SZ > "$THROTTLE" 2>/dev/null || exit 0
 
 HIT_DESC=$(awk 'BEGIN{c=0} /^---$/{c++; if(c==2)exit; next} c==1 && /^description:/{sub(/^description: */,""); gsub(/"/,""); print; exit}' "$MEM_DIR/$HIT" 2>/dev/null)
-REASON="DEDUP CHECK — a note on this topic may already exist:
+
+# Analytics: record every fired event (exact/fuzzy) so over/under-firing is auditable.
+LOG="$STATE_DIR/dedup.jsonl"
+MODE=fuzzy; [ "$EXACT" -eq 1 ] && MODE=exact
+jq -nc --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg s "$SESSION_ID" \
+   --arg new "$REL" --arg hit "$HIT" --arg mode "$MODE" '{ts:$ts,session:$s,new_file:$new,matched:$hit,mode:$mode}' >> "$LOG" 2>/dev/null || true
+
+if [ "$EXACT" -eq 1 ]; then
+  REASON="DEDUP — '$REL' collides with an existing note (same slug/name):
 
   → $HIT
     $HIT_DESC
 
-You're about to create a NEW file '$REL'. Prefer EDITING the existing note above. If '$REL' is genuinely distinct, re-issue the same Write and it will go through — this check fires once per file per session."
-jq -nc --arg r "$REASON" '{hookSpecificOutput:{hookEventName:"PreToolUse",permissionDecision:"deny",permissionDecisionReason:$r}}'
+This looks like the SAME note. EDIT the existing file instead. If it is genuinely distinct, re-issue the same Write and it will go through — fires once per file per session."
+  jq -nc --arg r "$REASON" '{hookSpecificOutput:{hookEventName:"PreToolUse",permissionDecision:"deny",permissionDecisionReason:$r}}'
+else
+  NOTE="possible existing home: $HIT — ${HIT_DESC}. Read it before creating '$REL'; if the lesson fits, edit that file instead of making a new one. Genuinely distinct? Creating is fine — this is advisory, not a block."
+  jq -nc --arg c "[MEMORY DEDUP] $NOTE" '{hookSpecificOutput:{hookEventName:"PreToolUse",additionalContext:$c}}'
+fi
 exit 0

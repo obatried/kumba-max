@@ -16,6 +16,17 @@ get_conf() { grep -E "^$1=" "$CONFIG" 2>/dev/null | tail -1 | cut -d= -f2- | sed
 MEM_DIR=$(get_conf MEM_DIR); [ -n "$MEM_DIR" ] || exit 0
 [ "$(get_conf ENFORCE_HOME)" = "0" ] && exit 0
 
+# Shared frontmatter helper — accepts a top-level `home:`/`description:` OR a harness-nested
+# `metadata.<key>:`. Fall back to a top-level-only inline reader if the lib is absent.
+LIB="${TOTAL_RECALL_LIB:-$(dirname "$0")/lib/memory-frontmatter.sh}"
+# shellcheck source=/dev/null
+[ -r "$LIB" ] && . "$LIB"
+if ! command -v extract_fm_scalar >/dev/null 2>&1; then
+  extract_fm_scalar() { awk -v key="$1" '
+    /^---[[:space:]]*$/ { if(!fm){fm=1;next} exit } !fm{next}
+    $0 ~ ("^" key ":[[:space:]]*") { sub("^[^:]+:[[:space:]]*",""); gsub(/"/,""); sub(/^[[:space:]]+/,""); sub(/[[:space:]]+$/,""); print; exit }'; }
+fi
+
 INPUT=$(cat)
 TOOL=$(printf '%s' "$INPUT" | jq -r '.tool_name // ""')
 [ "$TOOL" = "Write" ] || exit 0
@@ -26,10 +37,10 @@ case "$FILE_PATH" in *.md) ;; *) exit 0 ;; esac
 [ -f "$FILE_PATH" ] && exit 0   # only guard NEW notes; never block overwriting an existing file
 REL="${FILE_PATH#$MEM_DIR/}"
 case "$REL" in
-  MEMORY.md) exit 0 ;;
+  MEMORY.md|MEMORY.md.bak-*) exit 0 ;;
   topics/*.md|projects/*.md) exit 0 ;;
   *INDEX.md) exit 0 ;;
-  archive/*) exit 0 ;;
+  archive/*|.archive/*) exit 0 ;;
 esac
 
 CONTENT=$(printf '%s' "$INPUT" | jq -r '.tool_input.content // ""')
@@ -37,10 +48,7 @@ CONTENT=$(printf '%s' "$INPUT" | jq -r '.tool_input.content // ""')
 ALLOWED_FILE=$(get_conf ALLOWED_INDEXES); [ -z "$ALLOWED_FILE" ] && ALLOWED_FILE="$MEM_DIR/.allowed-indexes"
 [ -r "$ALLOWED_FILE" ] || exit 0   # missing OR unreadable manifest -> fail open, don't deny
 
-HOME_FIELD=$(printf '%s' "$CONTENT" | awk '
-  BEGIN{c=0}
-  /^---$/{c++; if(c==1){f=1;next} if(c==2)exit}
-  f && /^home:/{sub(/^home: */,""); gsub(/"/,""); gsub(/^ */,""); gsub(/ *$/,""); print; exit}')
+HOME_FIELD=$(printf '%s' "$CONTENT" | extract_fm_scalar home)
 ALLOWED_LIST=$(tr '\n' ',' < "$ALLOWED_FILE" | sed 's/,$//;s/,/, /g')
 
 emit_deny() { jq -nc --arg r "$1" '{hookSpecificOutput:{hookEventName:"PreToolUse",permissionDecision:"deny",permissionDecisionReason:$r}}'; }
@@ -63,10 +71,7 @@ To add a new one, append it to $ALLOWED_FILE."
 fi
 
 # Description is the search surface (what recall matches against + shows). Require a real one.
-DESC=$(printf '%s' "$CONTENT" | awk '
-  BEGIN{c=0}
-  /^---$/{c++; if(c==1){f=1;next} if(c==2)exit}
-  f && /^description:/{sub(/^description: */,""); gsub(/"/,""); print; exit}')
+DESC=$(printf '%s' "$CONTENT" | extract_fm_scalar description)
 DESC_WORDS=$(printf '%s' "$DESC" | wc -w | tr -d ' ')
 if [ -z "$DESC" ] || [ "${DESC_WORDS:-0}" -lt 5 ]; then
   emit_deny "Memory note '$REL' needs a substantive 'description:'. It's the search surface — what recall matches against and shows you later — so a vague or empty one means the note won't be found. Write a one-line description (~5+ words) in the words you'd search for."
@@ -75,7 +80,7 @@ fi
 
 # Soft, non-blocking nits (note IS allowed): missing created date, generic filename.
 WARN=""
-CREATED=$(printf '%s' "$CONTENT" | awk 'BEGIN{c=0} /^---$/{c++; if(c==1){f=1;next} if(c==2)exit} f && /^created:/{print "yes"; exit}')
+CREATED=$(printf '%s' "$CONTENT" | extract_fm_scalar created)
 [ -z "$CREATED" ] && WARN="${WARN}no 'created:' date (used for staleness tracking); "
 SLUG=$(basename "$REL" .md | sed -E 's/^(feedback|reference|project|user|tool)_//')
 case "$SLUG" in

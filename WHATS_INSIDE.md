@@ -69,7 +69,9 @@ Source: [total-recall](https://github.com/obatried/total-recall). Four parts tha
 | `memory-autoindex.sh` | after a note write | Appends the note's one-line pointer to its index. Keeps `MEMORY.md` accurate, zero upkeep. |
 | `total-recall-rebuild.sh` | session start + after memory writes | Rebuilds the search index in the background. |
 | `total-recall-recall.sh` | every prompt | On a confident match, surfaces up to 2 relevant notes — *at point-of-need*, even if you forgot you saved them. Biases to silence. |
-| `total-recall-dedup.sh` | before a note Write | **Blocks once** if the new note strongly overlaps an existing one, pointing you to edit instead. Re-issue to override. |
+| `total-recall-dedup.sh` | before a note Write | On an **exact** slug/name collision, blocks once (re-issue to override); a looser topical overlap is a non-blocking advisory. Points you to edit the existing note instead. |
+
+The five memory hooks share one tiny helper — **`hooks/lib/memory-frontmatter.sh`** — that reads a note's `home:`/`description:` whether it's written at the top level or nested under a `metadata:` block. It's not a hook (it runs nothing on its own); the hooks `source` it, with a built-in fallback if it's absent.
 
 **How to turn it off.** Remove a hook's entry from `settings.json`, or set `ENFORCE_HOME=0` in `~/.config/total-recall/config` to keep everything but the home-guard. All five no-op if the config file is gone.
 

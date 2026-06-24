@@ -42,6 +42,10 @@ SAFE_SESSION_ID=$(printf '%s' "$SESSION_ID" | tr -cs 'A-Za-z0-9._-' '_')
 [ -z "$SAFE_SESSION_ID" ] && SAFE_SESSION_ID="unknown"
 THROTTLE_FILE="$STATE_DIR/learn-trigger-$SAFE_SESSION_ID"
 
+# Self-hygiene: throttle files are only meaningful within their own session — prune
+# stale ones so they don't accumulate forever on a long-lived install.
+find "$STATE_DIR" -maxdepth 1 -name 'learn-trigger-*' -mtime +7 -delete 2>/dev/null || true
+
 # Atomic once-per-session throttle: noclobber create wins exactly once.
 ( set -C; : > "$THROTTLE_FILE" ) 2>/dev/null || exit 0
 date -u +%Y-%m-%dT%H:%M:%SZ > "$THROTTLE_FILE" 2>/dev/null || true

@@ -13,6 +13,7 @@ This is the **full** bundle. If you just installed Claude Code and want the gent
 | Layer | What it gives you | Source |
 |---|---|---|
 | **Governance** | A 10-section `CLAUDE.md` of coding principles + a maintenance policy, companion map, and worked examples that keep it from rotting as it grows. | oba-claude |
+| **Safety floor** | A hardened `settings.json` — quiet reads/edits auto-allow, a wide deny list blocks reading secrets (`.env`, `.ssh`, keychains) and dangerous shell (`rm -rf /`, `git push --force`), everything else prompts. | settings.json |
 | **Memory** | A tidy file-based memory with **keyword search (SQLite FTS5/BM25)**, automatic recall at point-of-need, duplicate detection, and write-discipline so notes stay findable. | total-recall |
 | **Security** | Prompt-injection scanning on everything Claude reads from the web/email/Slack, a 96-pattern library, session-taint tracking, and friction-free gates on risky sends. | claude-shield |
 | **Self-correction** | A `/learn` loop that turns a mistake into a hook so it can't recur, surfaces playbooks at point-of-need, and injects a verify-first checklist each session. | recursive-learn |

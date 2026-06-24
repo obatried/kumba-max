@@ -50,13 +50,14 @@ if [ -d "$CLAUDE" ]; then
   cp -R "$CLAUDE" "$BACKUP"
 fi
 
-mkdir -p "$HOOKS" "$CLAUDE/scripts" "$CLAUDE/data" "$CLAUDE/commands" "$ENGINE" \
-         "$CLAUDE/analytics" "$STATE/guards" "$STATE/recursive-learning" \
+mkdir -p "$HOOKS" "$HOOKS/lib" "$CLAUDE/scripts" "$CLAUDE/data" "$CLAUDE/commands" "$ENGINE" \
+         "$CLAUDE/analytics" "$STATE/guards" "$STATE/recursive-learning" "$STATE/learn" \
          "$CONFIG_DIR" "$(dirname "$DB_PATH")"
 
 # ─── Files (overwrite our own; never user data) ─────────────────────────────
 say "Installing hooks, engine, skills, governance, security data..."
 cp "$SRC/hooks/"*.sh        "$HOOKS/"
+cp "$SRC/hooks/lib/"*.sh    "$HOOKS/lib/"   # shared frontmatter helper sourced by the memory hooks
 cp "$SRC/scripts/"*         "$CLAUDE/scripts/"
 cp "$SRC/data/"*            "$CLAUDE/data/"
 cp "$SRC/commands/"*        "$CLAUDE/commands/"
@@ -177,4 +178,10 @@ echo "  2. Optional — enable Gmail/Calendar auto-approval by setting your own 
 echo "       echo 'export CLAUDE_SHIELD_SELF_EMAILS=\"you@example.com\"' >> ~/.zshrc"
 echo "  3. Try memory search:  $ENGINE/total-recall \"something in your notes\""
 echo "  4. Read WHATS_INSIDE.md — every layer, what it does, how to turn it off."
-[ -n "${BACKUP:-}" ] && echo && echo "Your previous ~/.claude is backed up at: $BACKUP"
+# Note: a bare `[ … ] && echo` here would make the script exit non-zero on a FRESH
+# install (no backup), looking like a failure. Use an if-block so the exit code is 0.
+if [ -n "${BACKUP:-}" ]; then
+  echo
+  echo "Your previous ~/.claude is backed up at: $BACKUP"
+fi
+exit 0

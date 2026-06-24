@@ -49,6 +49,7 @@ CANDS=$(printf '%s\n' "$TSV" | awk -F'\t' \
   NF>=4 {
     s=$1+0; m=$2+0; tot=$3+0; p=$4;
     if (idx != "" && p == idx) next;
+    if (p ~ /^\.?archive\//) next;   # never surface an archived (obsolete) note
     a=(m>0)? s/m : 0; r=(tot>0)? m/tot : 0;
     if ((m>=3 && a<=avg) || (s<=strong && m>=6 && r>=ratio)) print p;
   }')
@@ -72,7 +73,11 @@ fi
 
 SAFE_SID=$(printf '%s' "$SESSION_ID" | tr -cs 'A-Za-z0-9._-' '_'); [ -z "$SAFE_SID" ] && SAFE_SID="unknown"
 STATE_DIR="$HOME/.cache/total-recall"; mkdir -p "$STATE_DIR" 2>/dev/null || true
-SEEN_FILE="$STATE_DIR/recall-$SAFE_SID.seen"; touch "$SEEN_FILE" 2>/dev/null || true
+SEEN_FILE="$STATE_DIR/recall-$SAFE_SID.seen"
+# Self-hygiene: prune stale per-session seen-files (>7d) on the first emit of a new
+# session, so they don't accumulate forever on a long-lived install.
+[ -e "$SEEN_FILE" ] || find "$STATE_DIR" -maxdepth 1 -name 'recall-*.seen' -mtime +7 -delete 2>/dev/null || true
+touch "$SEEN_FILE" 2>/dev/null || true
 SEEN_COUNT=$(grep -c . "$SEEN_FILE" 2>/dev/null || true); SEEN_COUNT=${SEEN_COUNT:-0}
 
 label_of() {  # $1 = abs path -> description / first heading / humanized filename

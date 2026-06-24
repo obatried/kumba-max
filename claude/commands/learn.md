@@ -29,14 +29,30 @@ For each that clears the bar, write or refresh a `reference_*.md` playbook in yo
   ```
   `memory` is the file path RELATIVE to your memory dir. Prefer binding to an **early** action in the workflow (a first read/list), so the runbook lands *before* the consequential write — the hook informs, it doesn't block. No detectable trigger? Skip this; prompt-time recall is the only carrier for purely conversational playbooks. (`inform_on_tool` only fires for tools `mem-surface` is registered on — `Write`/`Edit`/`MultiEdit`/`Bash` by default; to surface on another tool, add its exact name to the `mem-surface` matcher in `settings.json` first.)
 
+## Step A2 — Structured-review fold-back (ONLY if a graded review returned named defects this session)
+
+Skip entirely unless an external review handed back **named, located** defects this session — an automated grader, a human PR/code review, a CI gate, or a QA report. No such verdict → skip silently.
+
+A structured verdict is **proof a playbook/checklist may be incomplete**, so the job is to ACT, not just note. The failure this step exists to prevent: *summarizing the headline lesson while the individual named defects never make it into the checklist* ("we learned but didn't do it"). So:
+- **Walk the FULL defect list, not the headline.** For EACH clearly-defined defect, do one of: (a) fold a compact preventive rule into the relevant pre-submit checklist/playbook (refresh an existing line, don't duplicate); or (b) skip it *explicitly* as one-off / ambiguous / not-preventable-before-submit / already-covered. Mechanizable (regex / path / metadata check) → the checklist's machine-checks; judgment-only → one sharp line.
+- **Reconcile before ending:** every defect must be accounted for — added, refreshed, already-covered, or deliberately skipped. Report the count in the Output block.
+- **Fold into the workflow's own pre-submit home** — the playbook or checklist that governs that workflow, not a global note.
+- **Don't over-build:** the external grader is the source of truth — the durable rule is procedural ("run it before submit, fix, re-run until clean, fold back any new defect class"). Build a local scripted check only for the cheap, recurring, deterministic subset; never clone the grader wholesale (it drifts from their real criteria and gives false-green confidence).
+
 ## Step B — Mistake → minimal (no journal, no taxonomy)
 
 Was there a notably-wrong **action** this session (not just an imperfect phrasing)? If no, skip this step entirely.
 
-**Also — user corrections.** Did the user push back on or correct your behavior this session (incl. soft signals: "actually", "instead", "hmm", or re-stating an ask they already made)? If it's a correction worth not repeating, generalize its ROOT (not the surface complaint) into a rule in your memory dir — and check for an existing rule to refine before creating a duplicate. Judgment, not an exhaustive per-message audit.
+**Also — user corrections.** Did the user push back on or correct your behavior this session (incl. soft signals: "actually", "instead", "hmm", or re-stating an ask they already made)? If it's a correction worth not repeating, generalize its ROOT (not the surface complaint), then find its **canonical owner and EDIT that** — a CLAUDE.md section, the playbook that runs the workflow, or project/topic memory. Workflow mechanics (steps, timings) belong in the playbook, not a parallel global note. Write a new `feedback_*.md` only when no owner exists. Judgment, not an exhaustive per-message audit.
 
-If yes, classify the trigger's **detectability** — that decides whether you can actually prevent recurrence:
-- **Detectable** (an exact file path you must not write, or a Bash command pattern you must not run) → **install a hard guard NOW**, on first identification. Append a spec to `~/.claude/state/guards/guard-specs.json`; the `learn-guard.sh` PreToolUse hook reads it and DENIES the matching call. This is the *only* level that genuinely makes a mistake "never again."
+**Feedback-as-debt.** Standalone `feedback_*` notes are the part of a memory corpus most likely to become dead weight — a note with no detectable trigger can never auto-surface, so it's write-only: it costs retrieval precision and never pays it back. So: (1) **default HARD to editing a canonical owner** (CLAUDE.md / playbook / project memory) over spawning a new note; (2) a new `feedback_*.md` is admissible only if it has a **detectable trigger** you can wire to an `inform_*` spec (else it can't fire and is debt on creation); (3) if the same correction family recurs ~3+ times, **stop writing notes — fix the root mechanism** (a hook, a CLAUDE.md rule, or the workflow itself). A note that can't fire isn't a memory, it's litter.
+
+If yes, classify it — **by invariance and harm FIRST, detectability second.** Detectability (can you write an exact path or command pattern for it?) only decides how *reliably* a mechanism can fire; it does NOT earn the strongest mechanism. A regex match means you *can* hard-block, not that you *should*.
+
+**A hard guard (`deny_*` in `guard-specs.json`) is a global safety rail, not a strong memory** — it is permanent, applies in every project and session, and escaping it means hand-editing JSON. So it is admissible ONLY when you can name the **harm class** it prevents: `data_loss`, `security`, `environment_breakage`, or `tool_semantics` (a tool/shell that silently does the wrong thing). **If the best label you can give the correction is `preference`, `style`, `workflow`, or `pacing` → it gets NO hard guard, even if it's perfectly detectable.** Sanity test: a hard guard's `reason` must read as a timeless rule on its own; if you can't write it without "the user said so this once", it is a contextual call, not an invariant. (A cautionary case: a one-session "stop pacing yourself" instruction was regex-detectable, so it ossified into a forever-global deny that later fought the user's own intent and had to be torn out by hand. Detectable ≠ worth enforcing forever.)
+
+Then route by mechanism:
+- **Harm-class invariant + detectable** → **install the hard guard NOW**, phrased timelessly (kill-the-browser, `rm -rf /`, a shell idiom that returns a false-green exit code). Append a spec to `~/.claude/state/guards/guard-specs.json`; the `learn-guard.sh` PreToolUse hook reads it and DENIES the matching call.
   ```bash
   jq '. += [{"type":"deny_write_path","path":"/ABS/PATH","reason":"why + what to do instead"}]' \
      ~/.claude/state/guards/guard-specs.json > ~/.claude/state/guards/.gs.$$ \
@@ -44,9 +60,9 @@ If yes, classify the trigger's **detectability** — that decides whether you ca
   # command form: {"type":"deny_bash_regex","pattern":"<portable, ANCHORED ERE>","reason":"..."}
   ```
   Use the **absolute** path (exact match); keep regexes **portable and anchored** so they can't over-block.
-- **Fuzzy** (a judgment call, no clean signature) → first decide **scope**. Is the lesson *universal* (about how you reason about any claim or state — applies to any session regardless of what's being worked on), or *project/tool-scoped* (it names a specific product, tool, file format, or workflow)?
-  - **Universal** → **sharpen the single matching line** in `~/.claude/state/recursive-learning/verify-preflight.md`. Keep that file to **~5 lines, one sentence each, zero project examples** — sharpen the existing line, never add a per-incident bullet, never let a line grow past one sentence. Be honest: this is salience-only (less likely, not impossible).
-  - **Project/tool-scoped** → it belongs in that project's memory or the relevant `reference_*` playbook, which prompt-time recall already surfaces on mention. That's **Step A's job — deepen the playbook there.** Do **NOT** copy it into the global preflight: that is exactly what bloats it — a lossy duplicate of a lesson already homed, broadcast to every unrelated session.
+- **Detectable but preference / workflow / pacing / style** → do **NOT** hard-block. Bind an `inform_*` surface (Step A's mechanism) so it *reminds* at the action point and stays **overridable in the moment**, and/or home it in the relevant project's memory. A reversible preference must never require editing JSON to escape.
+- **Fuzzy + universal** (about how you reason about any claim or state — applies to any session regardless of what's being worked on) → **sharpen the single matching line** in `~/.claude/state/recursive-learning/verify-preflight.md`. Keep that file to **~5 lines, one sentence each, zero project examples** — sharpen the existing line, never add a per-incident bullet, never let a line grow past one sentence. Be honest: this is salience-only (less likely, not impossible).
+- **Fuzzy + project/tool-scoped** (it names a specific product, tool, file format, or workflow) → it belongs in that project's memory or the relevant `reference_*` playbook, which prompt-time recall already surfaces on mention. That's **Step A's job — deepen the playbook there.** Do **NOT** copy it into the global preflight: that is exactly what bloats it — a lossy duplicate of a lesson already homed, broadcast to every unrelated session.
 
 ## Step C — Close the dedup loop (every run — cheap)
 
@@ -64,10 +80,11 @@ No consolidation pass yet? Skip this step. Keep it conservative: surface similar
 ```
 /learn
 - Playbooks captured/refreshed: N (slug — one line each) | none
+- Review fold-back: N folded / M already-covered / K skipped (reason) | n/a (no graded review)
 - Mistake → guard installed: <path/pattern> | salience line sharpened | none
 - Memory maintenance: M merges applied (date) | K pending — surfaced | none pending
 - Still open: one line | nothing
 ```
 
-Then append one JSON line to your run log (`~/.claude/state/learn/learn-runs.jsonl`):
-`{ts, session, playbooks_captured, guard_installed, salience_sharpened}`
+Then append one JSON line to your run log (`~/.claude/state/learn/learn-runs.jsonl`) — run it as a **single standalone command**, not bundled with `mkdir` or other steps (a multi-step blob can re-trigger a permission prompt even when Bash is allow-listed):
+`{ts, session, playbooks_captured, guard_installed, salience_sharpened, review_folded}`

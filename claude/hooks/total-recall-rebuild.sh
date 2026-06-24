@@ -20,7 +20,10 @@ TR_HOME=$(get_conf TR_HOME); MEM_DIR=$(get_conf MEM_DIR)
 [ -n "$TR_HOME" ] && [ -n "$MEM_DIR" ] || exit 0
 INDEXER="$TR_HOME/index.py"
 [ -f "$INDEXER" ] || exit 0
-LOCK="${TMPDIR:-/tmp}/total-recall-rebuild.lock"
+# Lock in a stable user-owned dir (not $TMPDIR, which is session-scoped on macOS and
+# unpredictable for troubleshooting). index.py also writes its DB cache here.
+LOCK_DIR="$HOME/.cache/total-recall"; mkdir -p "$LOCK_DIR" 2>/dev/null || true
+LOCK="$LOCK_DIR/rebuild.lock"
 
 INPUT=$(cat)
 EVENT=$(printf '%s' "$INPUT" | jq -r '.hook_event_name // ""')

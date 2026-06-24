@@ -21,6 +21,8 @@ gmail-approve calendar-approve email-html-guard capped-files-check"
 
 say "Removing kit hooks..."
 for h in $KIT_HOOKS; do rm -f "$HOOKS/$h.sh"; done
+# shared helper sourced by the memory hooks; remove it and the lib dir if now empty
+rm -f "$HOOKS/lib/memory-frontmatter.sh"; rmdir "$HOOKS/lib" 2>/dev/null || true
 rm -f "$CLAUDE/scripts/output-scanner.py" "$CLAUDE/scripts/audit-claude-sync.sh"
 rm -rf "$CLAUDE/memory-engine"
 
